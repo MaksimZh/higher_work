@@ -157,3 +157,180 @@ private:
 ...
 };
 ```
+
+
+## 1.3 У метода слишком большой список параметров
+```Python
+def wave(l, k, r, rRef, deriv = 0):
+    if deriv == 0:
+        rk = np.real(k)
+        ik = np.abs(np.imag(k))
+        kc = np.abs(rk) > ik
+        kcr = np.logical_and(kc, rk > 0)
+        kci = np.logical_and(kc, rk < 0)
+        kr = k * r
+        krRef = k * rRef
+        krRef[kc] = 0
+        w = np.sqrt(np.pi / ((2 + 0j) * kr)) \
+            * sp.hankel1e(l + 1/2, kr) * np.exp(1j * (kr - krRef))
+        w[kcr] = 1j * np.imag(w[kcr])
+        w[kci] = np.real(w[kci])
+        return w
+    elif deriv == 1:
+        return (l / r) * wave(l, k, r, rRef) - k * wave(l + 1, k, r, rRef)
+    else:
+        assert(False)
+```
+Много параметров, использование `elif` и `else`,
+производные высокого порядка не нужны,
+но можно запросить и нарваться на `assert`.
+
+Используем функции высокого порядка:
+```Python
+def scaled_spherical_wave(k, rRef):
+    rk = np.real(k)
+    ik = np.abs(np.imag(k))
+    kc = np.abs(rk) > ik
+    kcr = np.logical_and(kc, rk > 0)
+    kci = np.logical_and(kc, rk < 0)
+    krRef = k * rRef
+    krRef[kc] = 0
+
+    def wave(l, r):
+        kr = k * r
+        w = np.sqrt(np.pi / ((2 + 0j) * kr)) \
+            * sp.hankel1e(l + 1/2, kr) * np.exp(1j * (kr - krRef))
+        w[kcr] = 1j * np.imag(w[kcr])
+        w[kci] = np.real(w[kci])
+        return w
+    
+    def deriv(l, r):
+        return (l / r) * wave(l, r) - k * wave(l + 1, r)
+    
+    return wave, deriv
+```
+Больше нет `else` и с производной всё проще.
+
+
+## 1.4 Несколько методов используются для решения одной и той же проблемы.
+```Python
+class FuncSpec:
+    ...
+
+    def get_input_ids(self) -> list[str]:
+        return self.__input_ids
+    
+    def get_output_ids(self) -> list[str]:
+        return self.__output_ids
+
+    def get_input_spec(self) -> dict[str, type]:
+        return self.__input_spec
+    
+    def get_output_spec(self) -> dict[str, type]:
+        return self.__output_spec
+```
+Одна пара запросов возвращает ключи словаря, а другая - сами словари.
+
+Разница всё же есть, поскольку нам важен порядок аргументов в функции,
+поэтому в первых двух методах возвращаются именно списки, а не множества.
+
+Однако, в коде уживаются вот такие конструкции:
+```Python
+if id in self.__spec.get_input_ids():
+    ...
+...
+if not id in self.__spec.get_input_spec():
+    ...
+```
+Для проверки принадлежности идентификатора списку аргументов
+используются два разных метода.
+И кстати, использование `get_input_spec` -
+это уже и пункт 1.5 - чрезмерный результат.
+
+Источник проблемы - недостаточная инкапсуляция `FuncSpec`.
+Проверка того, что идентификатор принадлежит списку аргументов должна быть
+именно в этом классе.
+
+Парадокс, но для улучшения согласованности нужно **добавить** методы:
+```Python
+class FuncSpec:
+    ...
+
+    def get_input_ids(self) -> list[str]:
+        return self.__input_ids
+    
+    def get_output_ids(self) -> list[str]:
+        return self.__output_ids
+
+    def get_input_spec(self) -> dict[str, type]:
+        return self.__input_spec
+    
+    def get_output_spec(self) -> dict[str, type]:
+        return self.__output_spec
+
+    def has_input(self, id: str) -> bool:
+        return id in self.__input_spec
+
+    def has_output(self, id: str) -> bool:
+        return id in self.__output_spec
+```
+
+
+## 1.5 Чрезмерный результат
+```Python
+def scaled_spherical_wave(k, rRef):
+    rk = np.real(k)
+    ik = np.abs(np.imag(k))
+    kc = np.abs(rk) > ik
+    kcr = np.logical_and(kc, rk > 0)
+    kci = np.logical_and(kc, rk < 0)
+    krRef = k * rRef
+    krRef[kc] = 0
+
+    def wave(l, r):
+        kr = k * r
+        w = np.sqrt(np.pi / ((2 + 0j) * kr)) \
+            * sp.hankel1e(l + 1/2, kr) * np.exp(1j * (kr - krRef))
+        w[kcr] = 1j * np.imag(w[kcr])
+        w[kci] = np.real(w[kci])
+        return w
+    
+    def deriv(l, r):
+        return (l / r) * wave(l, r) - k * wave(l + 1, r)
+    
+    return wave, deriv
+```
+Возвращаем производную, а она нужна не всегда.
+
+Сделаем две функции.
+В качестве бонуса - у возвращаемых функций теперь ещё меньше параметров.
+```Python
+def scaled_spherical_wave(l, k, rRef):
+    rk = np.real(k)
+    ik = np.abs(np.imag(k))
+    kc = np.abs(rk) > ik
+    kcr = np.logical_and(kc, rk > 0)
+    kci = np.logical_and(kc, rk < 0)
+    krRef = k * rRef
+    krRef[kc] = 0
+
+    def wave(r):
+        kr = k * r
+        w = np.sqrt(np.pi / ((2 + 0j) * kr)) \
+            * sp.hankel1e(l + 1/2, kr) * np.exp(1j * (kr - krRef))
+        w[kcr] = 1j * np.imag(w[kcr])
+        w[kci] = np.real(w[kci])
+        return w
+    
+    return wave
+
+def scaled_spherical_wave_deriv(l, k, rRef):
+
+    wave0 = scaled_spherical_wave(l, k, rRef)
+    wave1 = scaled_spherical_wave(l + 1, k, rRef)
+    
+    def deriv(r):
+        return (l / r) * wave0(r) - k * wave1(r)
+    
+    return deriv
+```
