@@ -65,3 +65,18 @@ imageAvailableSemaphore = createSemaphore(device);
 renderFinishedSemaphore = createSemaphore(device);
 inFlightFence = createSignaledFence(device);
 ```
+
+
+## 3
+```Python
+result = np.zeros((n,) + a.shape[1:] + b.shape[1:], dtype = np.common_type(a, b))
+```
+Из-за того, что вычисление размерностей массива засунуты в вызов конструктора,
+пришлось долго вспоминать, что же они означают.
+```Python
+a_item_shape = a.shape[1:]
+b_item_shape = b.shape[1:]
+product_item_shape = a_item_shape + b_item_shape
+product_type = np.common_type(a, b)
+result = np.zeros((product_items_count,) + product_item_shape, dtype = product_type)
+```
