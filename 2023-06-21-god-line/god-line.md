@@ -80,3 +80,21 @@ product_item_shape = a_item_shape + b_item_shape
 product_type = np.common_type(a, b)
 result = np.zeros((product_items_count,) + product_item_shape, dtype = product_type)
 ```
+
+
+## 4
+```Python
+return TransferMatrices(
+    Tensor(result_array, row_suffix, col_suffix),
+    row_dir = right_wave.dir_axis + row_suffix,
+    col_dir = left_wave.dir_axis + col_suffix)
+```
+Одновременно вызывается конструктор и вычисляются два параметра для него.
+И кстати, это привело к ошибке: параметры для `Tensor` заданы не правильно.
+```Python
+row_dir_axis = right_wave.dir_axis + row_suffix
+col_dir_axis = left_wave.dir_axis + col_suffix
+return TransferMatrices(
+    Tensor(result_array, row_dir_axis, col_dir_axis),
+    row_dir=row_dir_axis, col_dir=col_dir_axis)
+```
