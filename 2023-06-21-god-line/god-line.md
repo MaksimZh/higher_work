@@ -98,3 +98,29 @@ return TransferMatrices(
     Tensor(result_array, row_dir_axis, col_dir_axis),
     row_dir=row_dir_axis, col_dir=col_dir_axis)
 ```
+
+## 5
+```Python
+test = (np.linalg.inv(waves(kr).reshape(12, 12)) @ waves(kl).reshape(12, 12)).reshape(2, 2, 3, 2, 2, 3)
+```
+Формально эту строку можно разбить так,
+чтобы слияние осей массивов выполнялись отдельно:
+```Python
+right_waves = waves(kr)
+right_matrix = right_waves.reshape(12, 12)
+left_waves = waves(kl)
+left_matrix = left_waves.reshape(12, 12)
+test_matrix = (np.linalg.inv(right_matrix) @ left_matrix)
+test = test_matrix.reshape(2, 2, 3, 2, 2, 3)
+```
+Но это всё равно не очень хорошо.
+В моём проекте для аккуратной работы с осями массивов
+есть специальная абстракция - класс `Tensor`:
+```Python
+right_tensor = Tensor(waves(kr), "c", "deriv", "dir", "a", "b")
+left_tensor = Tensor(waves(kl), "c", "deriv", "dir", "a", "b")
+right_matrix = right_tensor.get_array(merge("c", "deriv"), merge("dir", "a", "b"))
+left_matrix = left_tensor.get_array(merge("c", "deriv"), merge("dir", "a", "b"))
+test_matrix = (np.linalg.inv(right_matrix) @ left_matrix)
+test = test_matrix.reshape(2, 2, 3, 2, 2, 3)
+```
