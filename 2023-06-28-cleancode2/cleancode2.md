@@ -167,3 +167,39 @@ class World:
 
 Даже в C и ассемблере память лучше защищена от ошибок работы с состояниями,
 чем объект класса `World`.
+
+
+## 2.5. Класс зависит от деталей реализации других классов.
+
+
+## 2.6. Приведение типов вниз по иерархии
+```Python
+class World(Status):
+    ...
+    
+    __entities: dict[Entity, dict[Type[Component], Component]]
+
+    ...
+
+    @status("OK", "NO_ENTITY", "NO_COMPONENT")
+    def get_component(self, entity: Entity, component_type: Type[Component]) -> Component:
+        if not self.has_entity(entity):
+            self._set_status("get_component", "NO_ENTITY")
+            return Component()
+        if not self.has_component(entity, component_type):
+            self._set_status("get_component", "NO_COMPONENT")
+            return Component()
+        self._set_status("get_component", "OK")
+        return self.__entities[entity][component_type]
+```
+Все компоненты свалены в хранилище под общим родительским типом `Component`.
+Поэтому приходится делать так:
+```Python
+position: FieldPosition = world.get_component(hero, FieldPosition) #type: ignore
+step: Step = world.get_component(hero, Step) #type: ignore
+```
+Проблема в том, что здесь типы - это ключи хранилища,
+и нет проверки типа, например, через `isinstance`.
+То есть тип не проверяется ни линтером, ни в рантайме,
+пока не нарвёмся на несуществующий атрибут.
+Это в лучшем случае. В худшем - будем работать не с тем типом, который ожидали.
