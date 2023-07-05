@@ -169,7 +169,27 @@ class World:
 чем объект класса `World`.
 
 
-## 2.5. Класс зависит от деталей реализации других классов.
+## 2.5. Класс зависит от деталей реализации других классов
+Жизненное :)
+```Python
+class Voenkomat:
+    __main_storage: dict[Name, PersonalFile]
+    __medical_dep_storage: dict[Name, PersonalFile]
+
+    def get_personal_file(name: Name, storage: Literal["main", "medical"] = "main") -> PersonalFile:
+        if storage == "medical":
+            return self.__medical_dep_storage[name]
+        return self.__main_storage[name]
+
+class Citizen:
+    __name: Name
+    __health_category: HealthCategory
+
+    def checkout(voenkomat: Voenkomat) -> None:
+        storage = "main" if self.__health_category == HealthCategory.OK else "medical"
+        personal_file = voenkomat.get_personal_file(self.name, storage)
+        ...
+```
 
 
 ## 2.6. Приведение типов вниз по иерархии
@@ -203,3 +223,110 @@ step: Step = world.get_component(hero, Step) #type: ignore
 То есть тип не проверяется ни линтером, ни в рантайме,
 пока не нарвёмся на несуществующий атрибут.
 Это в лучшем случае. В худшем - будем работать не с тем типом, который ожидали.
+
+
+## 2.7. Требуется создавать классы-наследники для нескольких классов одновременно
+```Python
+class ODESystem(ABC):
+
+    @abstractmethod
+    def get_validity_segment(self) -> tuple[float, float]:
+        assert False
+
+    @abstractmethod
+    def get_dimension(self) -> int:
+        assert False
+
+class PolynomialODESystem(ODESystem):
+
+    def get_validity_segment(self) -> tuple[float, float]:
+        ...
+
+    def get_dimension(self) -> int:
+        ...
+
+    # Возвращает многочлены для вычисления коэффициентов
+    def get_ode_coefs_poly(self) -> Any:
+        ...
+
+class InterpolatedODESystem(ODESystem):
+
+    def get_validity_segment(self) -> tuple[float, float]:
+        ...
+
+    def get_dimension(self) -> int:
+        ...
+
+    # Вычисляет коэффициенты в заданной точке
+    def eval_ode_coefs(self, x: float) -> Any:
+        ...
+
+# Ради этого солвера нужны коэффициенты в виде многочленов
+class FrobeniusSolver:
+    ...
+
+    def __init__(self, ode: PolynomialODESystem):
+        ...
+    
+    def solve(self, x0: float) -> PolynomialSolution:
+        ...
+
+class EulerSolver(ABC):
+    ...
+
+    @abstractmethod
+    def solve(self, xa: float, xb: float) -> Solution:
+        pass
+
+# Нужно по-разному вычислять коэффициенты уравнений
+
+class PolynomialEulerSolver(EulerSolver):
+    ...
+
+    def __init__(self, ode: PolynomialODESystem):
+        ...
+
+    def solve(self, xa: float, xb: float) -> Solution:
+        ...
+        poly = self.__ode.get_ode_coefs_poly()
+        c = poly.eval(x)
+        ...
+
+
+class InterpolatedEulerSolver(EulerSolver):
+    ...
+
+    def __init__(self, ode: InterpolatedODESystem):
+        ...
+
+    def solve(self, xa: float, xb: float) -> Solution:
+        ...
+        c = self.__ode.eval_ode_coefs(x)
+        ...
+```
+
+Здесь лучше вынести метод `eval_ode_coefs` в родительский класс `ODESystem`.
+Тогда классы-наследники `EulerSolver` вообще не понадобятся:
+```Python
+class EulerSolver:
+    ...
+
+    def __init__(self, ode: ODESystem):
+        ...
+
+    def solve(self, xa: float, xb: float) -> Solution:
+        ...
+        c = self.__ode.eval_ode_coefs(x)
+        ...
+```
+
+
+## 2.8. Дочерние классы не используют или переопределяют методы и атрибуты родительских классов
+```Python
+```
+
+
+## 3.1. Одна модификация требует внесения изменений в несколько классов
+
+
+## 3.2. Использование сложных паттернов проектирования
