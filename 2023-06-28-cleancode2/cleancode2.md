@@ -323,10 +323,156 @@ class EulerSolver:
 
 ## 2.8. Дочерние классы не используют или переопределяют методы и атрибуты родительских классов
 ```Python
+class Metal:
+    ...
+    def put_in_water(self) -> None:
+        self.sink()
+
+class Sodium(Metal):
+    ...
+    def put_in_water(self) -> None:
+        self.explode()
+```
+Щелочные металлы в целом ведут себя неожиданным образом.
+А ведь есть ещё и ртуть, которая скорее жидкость.
+
+Поэтому иерархия классов должна выглядеть по-другому, например:
+```Python
+class Metal(ABC):
+    ...
+    @abstractmethod
+    def put_in_water(self) -> None:
+        assert False
+
+class RegularMetal(Metal):
+    ...
+    def put_in_water(self) -> None:
+        self.sink()
+
+class  AlkaliMetal(Metal):
+    ...
+    def put_in_water(self) -> None:
+        self.explode()
 ```
 
 
 ## 3.1. Одна модификация требует внесения изменений в несколько классов
+```Python
+class Complex:
+    __re_im: tuple[float, float]
+    
+    ...
+
+    def serialize(self) -> str:
+        return to_json(self.__re_im)
+
+class Quaternion:
+    __rijk: tuple[float, float, float, float]
+
+    ...
+
+    def serialize(self) -> str:
+        return to_json(self.__rijk)
+
+...
+```
+Если вместо JSON захочется YAML, то изменения нужно вносить во все классы,
+где требуется сериализация.
+
+Часто в таких случаях используется интроспекция:
+класс или функция, которая "находит" поля для любого класса и преобразует их
+в требуемый формат.
+С точки зрения ООП это является злостным нарушением инкапсуляции.
+
+Если пойти по пути чистого ООП, то можно использовать промежуточный формат:
+```Python
+class Complex:
+    __re_im: tuple[float, float]
+    
+    ...
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "type": "Complex",
+            "value": list(str(v) for v in self.__re_im)}
+
+class Quaternion:
+    __rijk: tuple[float, float, float, float]
+
+    ...
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "type": "Quaternion",
+            "value": list(str(v) for v in self.__rijk)}
+
+...
+
+def to_json(data: dict[str, Any]) -> str:
+    ...
+
+def to_yaml(data: dict[str, Any]) -> str:
+    ...
+```
 
 
 ## 3.2. Использование сложных паттернов проектирования
+```Python
+class Solver:
+    ...
+
+class SolverFactory:
+    ...
+
+class WrapperSolver(Solver):
+    ...
+
+class Wrapper(SolverFactory):
+    ...
+
+    def __init__(self, func: Func, output_ids: list[str]) -> None:
+        ...
+
+    def create(self) -> Solver:
+        return WrapperSolver(self.__spec)
+
+
+def _calc_spherical_bulk_hamiltonian(
+        x: float,
+        j: AngularMomentum,
+        l: AngularMomentum
+        ) -> SphericalHamiltonian:
+    ...
+
+
+SphericalBulkHamiltonianBuilder = Wrapper(
+    _calc_spherical_bulk_hamiltonian,
+    ["hamiltonian"])
+
+...
+
+h_builder = SphericalBulkHamiltonianBuilder.create()
+h_builder.put("x", x)
+h_builder.put("j", AngularMomentum(3/2))
+h_builder.put("l", AngularMomentum(1))
+h_builder.run()
+h = h_builder.get("hamiltonian")
+```
+Солверы задумывались как механизм ленивых вычислений,
+кеширования промежуточных результатов,
+автоматического распараллеливания и т.п.
+
+В итоге на практике это оказалось очень изощрённым способом вызова функций:
+```Python
+def calc_spherical_bulk_hamiltonian(
+        x: float,
+        j: AngularMomentum,
+        l: AngularMomentum
+        ) -> SphericalHamiltonian:
+    ...
+
+...
+
+h = calc_spherical_bulk_hamiltonian(x, AngularMomentum(3/2), AngularMomentum(1))
+```
+Можно было с этого начать, а потом уже заниматься всякими надстройками.
