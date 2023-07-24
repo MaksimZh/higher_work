@@ -1,5 +1,6 @@
 # Абстрагируем управляющие паттерны
 
+
 ## Единственный компонент
 Игровое поле:
 ```Python
@@ -80,3 +81,92 @@ screen_size: ScreenSize = world.get_component(world.get_global_entity(), ScreenS
 
 Итак, и для сохранения и для чтения глобальных данных
 теперь нужно вдвое меньше кода.
+
+
+## Перебор сущностей
+Вот как происходит отрисовка спрайтов:
+```Python
+entities = world.get_entities({Sprite, ScreenPosition}, set())
+while not entities.is_empty():
+    e = entities.get_entity()
+    sprite: Sprite = world.get_component(e, Sprite) #type: ignore
+    pos: ScreenPosition = world.get_component(e, ScreenPosition) #type: ignore
+    self.__screen.blit(sprite.source, (pos.x, pos.y), sprite.rect)
+    entities.remove_entity(e)
+```
+Такой код часто встречается.
+Перенесём цикл в класс `World`:
+```Python
+class World(Status):
+    ...
+    # Apply function to components of each entity
+    # that have all of `with_components`
+    # and none of `no_components`
+    def process_entities(
+            self,
+            with_components: set[Type[Component]],
+            no_components: set[Type[Component]],
+            process: ProcessFunc
+            ) -> None:
+        entities = self.get_entities(with_components, no_components)
+        while not entities.is_empty():
+            e = entities.get_entity()
+            self.__entities[e] = process(self.__entities[e])
+            entities.remove_entity(e)
+    ...
+```
+Тело цикла передаётся в виде функции, плюс мы сами извлекаем компоненты
+и передаём в эту функцию не весь мир, а только компоненты обрабатываемой сущности.
+
+Функция должна рассматривать эти компоненты как иммутабельные данные
+и вернуть новый набор компонентов.
+Программа стала чуть более функциональной и чуть менее императивной.
+Как правило это хорошо.
+
+Вот как теперь происходит рисование:
+```Python
+    world.process_entities({Sprite, ScreenPosition}, set(), self.__draw)
+...
+
+def __draw(self, components: ComponentDict) -> ComponentDict:
+    sprite: Sprite = components[Sprite] #type: ignore
+    pos: ScreenPosition = components[ScreenPosition] #type: ignore
+    self.__screen.blit(sprite.source, (pos.x, pos.y), sprite.rect)
+    return components
+```
+
+А вот что изменилось в управлении героем:
+
+Было:
+```Python
+def run(self, world: World, frame_time: Timems) -> None:
+    heroes = world.get_entities({Command, FieldPosition}, set())
+    if heroes.is_empty():
+        return
+    hero = heroes.get_entity()
+    command: Command = world.get_component(hero, Command) #type: ignore
+    if command.single:
+        world.remove_component(hero, Command)
+    if world.has_component(hero, FieldMotion):
+        return
+    if world.has_component(hero, Step):
+        return
+    world.add_component(hero, Step(command.direction))
+```
+
+Стало:
+```Python
+def run(self, world: World, frame_time: Timems) -> None:
+    world.process_entities({Command, FieldPosition}, set(), self.__process)
+
+def __process(self, components: ComponentDict) -> ComponentDict:
+    command: Command = components[Command] #type: ignore
+    if command.single:
+        del components[Command]
+    if FieldMotion in components or Step in components:
+        return components
+    components[Step] = Step(command.direction)
+    return components
+```
+Больше не нужен код для извлечения сущности героя из мира "вручную"
+и проверка на успех этого мероприятия.
