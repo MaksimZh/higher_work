@@ -170,3 +170,142 @@ def __process(self, components: ComponentDict) -> ComponentDict:
 ```
 Больше не нужен код для извлечения сущности героя из мира "вручную"
 и проверка на успех этого мероприятия.
+
+
+## Направление действия
+При движении:
+```Python
+field: GameField = world.get_component(world.get_global_entity(), GameField) #type: ignore
+if world.is_status("get_component", "NO_COMPONENT"):
+    return
+heroes = world.get_entities({Step, FieldPosition}, set())
+if heroes.is_empty():
+    return
+hero = heroes.get_entity()
+if world.has_component(hero, FieldMotion):
+    return
+position: FieldPosition = world.get_component(hero, FieldPosition) #type: ignore
+step: Step = world.get_component(hero, Step) #type: ignore
+target_position = calc_target(position, step.direction)
+if field.is_cell_empty(target_position.x, target_position.y):
+    world.add_component(hero, FieldMotion(step.direction, 0))
+    return
+```
+
+При поглощении объекта:
+```Python
+field: GameField = world.get_component(world.get_global_entity(), GameField) #type: ignore
+if world.is_status("get_component", "NO_COMPONENT"):
+    return
+heroes = world.get_entities({Step, FieldPosition}, set())
+if heroes.is_empty():
+    return
+hero = heroes.get_entity()
+if world.has_component(hero, FieldMotion):
+    return
+position: FieldPosition = world.get_component(hero, FieldPosition) #type: ignore
+step: Step = world.get_component(hero, Step) #type: ignore
+target_position = calc_target(position, step.direction)
+if not field.is_cell_obstacle(target_position.x, target_position.y):
+    return
+target = field.get_cell_entity(target_position.x, target_position.y)
+if not world.has_component(target, Consumable):
+    return
+world.add_component(hero, FieldMotion(step.direction, 0))
+world.add_component(target, Consumed())
+```
+
+При выходе с уровня:
+```Python
+field: GameField = world.get_component(world.get_global_entity(), GameField) #type: ignore
+if world.is_status("get_component", "NO_COMPONENT"):
+    return
+heroes = world.get_entities({Step, FieldPosition}, set())
+if heroes.is_empty():
+    return
+hero = heroes.get_entity()
+if world.has_component(hero, FieldMotion):
+    return
+position: FieldPosition = world.get_component(hero, FieldPosition) #type: ignore
+step: Step = world.get_component(hero, Step) #type: ignore
+target_position = calc_target(position, step.direction)
+if not field.is_cell_obstacle(target_position.x, target_position.y):
+    return
+target = field.get_cell_entity(target_position.x, target_position.y)
+if not world.has_component(target, Exit):
+    return
+self.__end = True
+```
+
+Общий паттерн: найти соседнюю сущность и предпринять определённые действия
+в зависимости от того, есть ли она и что это.
+Для этого нужно ещё и найти глобальный компонент `GameField`.
+
+Решение - вынести поиск и проверку цели в отдельную систему.
+Тогда получаем следующее:
+
+При движении:
+```Python
+def process(components: ComponentDict) -> ComponentDict:
+    step: Step = components[Step] #type: ignore
+    components[FieldMotion] = FieldMotion(step.direction, 0)
+    return components
+
+world.process_entities(
+    with_components={Step, FieldPosition, EmptyTarget},
+    no_components={FieldMotion},
+    process=process)
+```
+
+При поглощении объекта:
+```Python
+def process(components: ComponentDict) -> ComponentDict:
+    step: Step = components[Step] #type: ignore
+    target_component: Target = components[Target] #type: ignore
+    target = target_component.target
+    if not world.has_component(target, Consumable):
+        components[FieldMotion] = FieldMotion(step.direction, 0)
+        world.add_component(target, Consumed())
+    return components
+
+world.process_entities(
+    with_components={Step, FieldPosition, Target},
+    no_components={FieldMotion},
+    process=process)
+```
+Здесь, напрашивается паттерн для обработки пары объектов.
+
+При выходе с уровня:
+```Python
+def process(components: ComponentDict) -> ComponentDict:
+    target_component: Target = components[Target] #type: ignore
+    target = target_component.target
+    if world.has_component(target, Exit):
+        self.__end = True
+    return components
+
+world.process_entities(
+    with_components={Step, FieldPosition, Target},
+    no_components={FieldMotion},
+    process=process)
+```
+
+
+# Выводы
+Подход ECS очень гибкий, но очень низкоуровневый, и подразумевает работу
+с глобальным мутабельным состоянием.
+
+Из-за низкоуровневости возникает много повторяющихся конструкций в коде.
+При выполнении этого задания часть из них была заменена на более простые
+и наглядные конструкции.
+
+При этом в двух случаях применены функции высшего порядка, что делает код
+более функциональным.
+При этом работа с глобальным состоянием локализуется в более низкоуровневых
+модулях.
+
+В последнем задании, например, куча проверок просто сводится к передаче
+параметров фильтров `(with_components=..., no_components=...)`.
+
+Вероятно при увеличении знаний по ФП можно вообще обернуть всё ECS
+в функциональный интерфейс и сделать логику игры декларативной.
