@@ -1,6 +1,6 @@
 # Защитный код
 
-# 1. Проверка
+# 1.
 ```Python
 class WaveMatrices:
     __tensor: Tensor
@@ -30,6 +30,8 @@ class WaveMatrices:
     ...
 ```
 
+
+# 2.
 ```Python
 class MatchMatrices:
     __tensor: Tensor
@@ -51,6 +53,8 @@ class MatchMatrices:
     ...
 ```
 
+
+# 3.
 ```Python
 class EnvelopeHamiltonian(Operator):
     __band_axes: tuple[str, str]
@@ -77,5 +81,28 @@ class EnvelopeHamiltonian(Operator):
         assert isinstance(dual_band_basis, DualBasis)
         assert dual_band_basis.origin is band_basis
 
+    ...
+```
+
+
+# 4.
+```Python
+def calc_transfer_matrices(
+        left_wave: WaveMatrices, right_wave: WaveMatrices,
+        row_suffix: str, col_suffix: str,
+        ) -> TransferMatrices:
+    assert row_suffix != col_suffix
+    assert left_wave.dir_axis == right_wave.dir_axis
+    assert left_wave.extra_wave_axes == right_wave.extra_wave_axes
+    assert left_wave.component_axes == right_wave.component_axes
+    assert left_wave.array_axes == right_wave.array_axes
+    dir_axis = left_wave.dir_axis
+    extra_axes = tuple(left_wave.extra_wave_axes)
+    component_axes = tuple(left_wave.component_axes)
+    array_axes = tuple(left_wave.array_axes)
+    array_shape = tuple(left_wave.tensor.get_dim(ax) for ax in array_axes)
+    assert all(
+        left_wave.tensor.get_dim(ax) == right_wave.tensor.get_dim(ax) \
+        for ax in left_wave.tensor.axes)
     ...
 ```
