@@ -29,6 +29,26 @@ class WaveMatrices:
 
     ...
 ```
+```Python
+class WaveMatrices(Tensor):
+
+    def __init__(
+            self,
+            array: NDArray[Any, Any],
+            *axes: Axis) -> None:
+        super().__init__(array, *axes)
+        dir_axes = self.get_axes(WaveDirAxis)
+        assert len(dir_axes) == 1
+        dir_axis = dir_axes.pop()
+        assert self.get_dim(dir_axis) == 2
+        wave_dims = [self.get_dim(ax) for ax in self.get_axes(WaveAxis)]
+        wave_dims_combined = reduce(mul, wave_dims, 1)
+        component_dims = [self.get_dim(ax) for ax in self.get_axes(ComponentAxis)]
+        component_dims_combined = reduce(mul, component_dims, 1)
+        assert wave_dims_combined == component_dims_combined
+    
+    ...
+```
 
 
 # 2.
@@ -52,40 +72,45 @@ class MatchMatrices:
 
     ...
 ```
-
-
-# 3.
 ```Python
-class EnvelopeHamiltonian(Operator):
-    __band_axes: tuple[str, str]
-
+class MatchMatrices(Tensor):
+    __row_links: dict[WaveAxis, WaveAxis]
+    __col_links: dict[WaveAxis, WaveAxis]
+    
     def __init__(
             self,
             array: NDArray[Any, Any],
-            *axes: str | tuple[str, Basis],
-            ) -> None:
-        super().__init__(array, *axes)
-        envelope_axes = [
-            name for name, basis in self.bases.items() \
-                if isinstance(basis, EnvelopeBasis)]
-        dual_envelope_axes = [
-            name for name, basis in self.bases.items() \
-                if isinstance(basis, DualBasis) and \
-                    isinstance(basis.origin, EnvelopeBasis)]
-        assert len(envelope_axes) == 1
-        assert len(dual_envelope_axes) == 1
-        self.__band_axes = (envelope_axes[0], dual_envelope_axes[0])
-        band_basis = self.get_basis(self.band_left_axis)
-        assert isinstance(band_basis, EnvelopeBasis)
-        dual_band_basis = self.get_basis(self.band_right_axis)
-        assert isinstance(dual_band_basis, DualBasis)
-        assert dual_band_basis.origin is band_basis
-
+            *axes: Axis | LinkedAxes) -> None:
+        self.__row_links = dict()
+        self.__col_links = dict()
+        tensor_axes = list[Axis]()
+        for ax in axes:
+            if isinstance(ax, LinkedAxes):
+                assert ax.row not in self.__row_links
+                self.__row_links[ax.row] = ax.col
+                assert ax.col not in self.__col_links
+                self.__col_links[ax.col] = ax.row
+                tensor_axes.append(ax.col)
+                continue
+            tensor_axes.append(ax)
+        super().__init__(array, *tensor_axes)
+        row_dir_axes = set(self.get_axes(WaveDirAxis) & self.__row_links.keys())
+        assert len(row_dir_axes) == 1
+        col_dir_axes = set(self.get_axes(WaveDirAxis) & self.__col_links.keys())
+        assert len(col_dir_axes) == 1
+        assert self.row_axis_for(self.col_dir_axis) == self.row_dir_axis
+        assert self.col_axis_for(self.row_dir_axis) == self.col_dir_axis
+        assert self.get_dim(self.row_dir_axis) == 2
+        assert self.get_dim(self.col_dir_axis) == 2
+        assert (self.__row_links.keys() | self.__col_links.keys()) == self.get_axes(WaveAxis)
+        for row, col in self.__row_links.items():
+            assert self.get_dim(row) == self.get_dim(col)
+    
     ...
 ```
 
 
-# 4.
+# 3.
 ```Python
 def calc_transfer_matrices(
         left_wave: WaveMatrices, right_wave: WaveMatrices,
@@ -104,5 +129,17 @@ def calc_transfer_matrices(
     assert all(
         left_wave.tensor.get_dim(ax) == right_wave.tensor.get_dim(ax) \
         for ax in left_wave.tensor.axes)
+    ...
+```
+```Python
+def calc_transfer_matrices(
+        left_wave: WaveMatrices, right_wave: WaveMatrices,
+        *col_axes: LinkedAxes
+        ) -> TransferMatrices:
+    assert left_wave.axes == right_wave.axes
+    axes_tuple = tuple(left_wave.axes)
+    assert left_wave.get_array(*axes_tuple).shape == right_wave.get_array(*axes_tuple).shape
+    __row_links = dict[WaveAxis, WaveAxis]((ax.row, ax.col) for ax in col_axes)
+    assert __row_links.keys() == left_wave.get_axes(WaveAxis)
     ...
 ```
