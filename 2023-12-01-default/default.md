@@ -84,3 +84,89 @@
 
 ## 3. Исключение нежелательной формы обработки результата
 
+### 3.1 Данные о направлении распространения волны
+Есть данные о распространении волны в среде в виде многомерного массива.
+Одна из осей массива "помечена" как направление распространения волны
+и имеет размер 2: 0 для прямого и 1 для обратного направления...
+Или наоборот?
+
+Вот чтобы такого вопроса не возникало,
+теперь буду использовать другой тип данных.
+
+Раньше было примерно так:
+```Python
+class WaveAxisKind(Enum):
+    DIR = auto()
+    SOL = auto()
+    COMP = auto()
+    ...
+
+DIR = WaveAxisKind.DIR
+SOL = WaveAxisKind.SOL
+COMP = WaveAxisKind.COMP
+...
+
+class WaveSolutionTensor(SquareMatrixTensor):
+    ...
+    # Код, превращающий DIR/SOL/COMP в столбцы и строки для SquareMatrixTensor
+    ...
+
+...
+waves = WaveSolutionTensor(array, dir_axis(DIR), ...)
+...
+... waves.unwrap(dir_axis, ...)[0, ...]
+... waves.unwrap(dir_axis, ...)[1, ...]
+```
+
+Теперь так
+```Python
+SOL = MatrixAxisKind.COL   # WaveAxisKind больше не нужен!!!
+COMP = MatrixAxisKind.ROW
+...
+
+class WaveSolutionTensor(SquareMatrixTensor, BasisTensor):
+    ...
+    # Получаем строки и столбцы автоматически благодаря SquareMatrixTensor
+    ...
+
+class WaveDirBasis(Basis):
+    LEFT: Literal[0, 1] = 0
+    RIGHT: Literal[0, 1] = 1
+    
+    @property
+    def size(self) -> int:
+        return 2
+
+LEFT = WaveDirBasis.LEFT
+RIGHT = WaveDirBasis.RIGHT
+...
+waves = WaveSolutionTensor(array, dir_axis(SOL, basis=dir_basis), ...)
+...
+... waves.unwrap(dir_axis, ...)[LEFT, ...]   # лево и право
+... waves.unwrap(dir_axis, ...)[RIGHT, ...]  # вместо магических 0 и 1
+```
+
+Мы не просто улучшили возвращаемый тип данных, добавив базис-направление.
+Есть ещё пара преимуществ.
+
+В предметной области есть разделение на решения `SOL` и компоненты `COMP`.
+Решения сортируются по направлению `DIR` и всему остальному,
+то есть направление волны находится на уровень ниже
+в иерархии классов осей массива.
+В коде `DIR` и `SOL` были как-бы на равных, что создавало путаницу.
+Теперь путаницы нет, потому что нет `DIR`.
+Вместо него теперь `SOL` + `basis=dir_basis`.
+
+Раньше нужно было готовить параметры осей `DIR`/`SOL`/`COMP` для работы с ними
+класса `SquareMatrixTensor`, который оперирует понятиями `COL`/`ROW`.
+Сложности возникали из-за разделения `DIR`/`SOL`.
+Теперь всё просто: `SOL=COL`, `COMP=ROW`,
+больше не нужны дополнительные типы данных
+и лишний этап обработки параметров осей.
+
+
+### 3.2
+
+
+### 3.3
+
