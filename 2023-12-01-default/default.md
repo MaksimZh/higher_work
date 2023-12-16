@@ -202,14 +202,161 @@ class MyTensor(Tensor):
 Даже у меня в коде инициализация классов была разделена между двумя методами:
 часть полей заполнялась в `prepare_params`.
 
-Во-первых, нужно формализовать поведение этих тензоров на уровне спецификации:
+Во-первых, нельзя отдавать весь экземпляр класса функции,
+которая должна только обработать свои параметры,
+поэтому `prepare_params` должен быть `@classmethod`.
+Такой метод (в отличие от статических методов) по-прежнему поддерживает
+полиморфизм и позволяет организовать цепочку вызовов по иерархии классов.
+Отличие в том, что у него нет доступа к экземпляру класса.
+Поскольку работа с некоторыми типами тензоров требует отличать разные экземпляры
+на уровне параметров осей, в этот метод будем передавать `id` экземпляра,
+который уникален для всех объектов (которые пока не "съел" сборщик мусора).
+В отличие от `self` такой подход не даёт простого доступа к экземпляру.
+
+Во-вторых, нужно формализовать поведение классов-потомков на уровне
+спецификации, и проверять соответствующее поведение на уровне тестов.
 ```Python
-# Any child class 
-class Tensor(_BasicTensor):
+class MyTensor(Tensor):
+    ...
+    
+    @classmethod
+    def prepare_params(
+            cls, uid: int, param_axes: tuple[ParamAxis, ...]
+            ) -> tuple[ParamAxis, ...]:
+        """
+        This method should:
+          - convert user axis parameters to internal parameters;
+          - prepare new user parameters to be processed by parent classes;
+          - pass prepared parameters to parent classes like
+            `return super().prepare_params(uid, new_params)`.
+
+        The internal parameters must be sufficient to completely setup
+        the class instance within `post_init` method provided all parent
+        classes are setup correctly;
+
+        If the internal parameters differ from user-friendly parameters,
+        then they must:
+          - indicate (if found by this method) that the parameterized axis
+            is taken from another tensor's `param_axes` property and thus has
+            internal parameters for all parent classes (so all parent classes
+            will also be setup correctly);
+          - be not a part of public interface in any way, i.e. they are
+            not supposed to be set or read by user or any child/parent classes
+            (only user parameters should be used to communicate with parent
+            classes);
+          - be dropped/modified by this method in favor of user parameters.
+            if there is any conflict.
+
+        The unique instance identifier can be used to form internal parameters
+        different for any existing instances if needed.
+        """
+        return param_axes
+    
+    def post_init(self):
+        """
+        This method should:
+          - finish initialization of parent classes like
+            `super().post_init()`;
+          - finish initialization of this class supposing that all internal
+            parameters are set up and can be retrived from `self.param_axes`.
+        """
+        pass
+
     ...
 ```
 
 
+### 3.3 Автоматический вызов методов родительских классов
+В предыдущем примере можно случайно забыть вызвать метод `super()` в нужном
+месте.
+Чтобы избежать этой неприятности, я автоматизировал процесс вызова методов
+в нужном порядке относительно иерархии классов:
+```Python
+# Получить последовательность классов, переопределяющих заданный метод
+# в том порядке, в котором они идут в Method Resolution Order (MRO)
+# заданного класса
+def _call_chain(tp: type, method: str) -> tuple[type, ...]:
+    return tuple(t for t in tp.mro() if method in t.__dict__)
 
-### 3.3
+class Tensor(_BasicTensor):
+    ...
+    
+    def __init__(
+            self,
+            array: NDArray[Any, Any],
+            *patterns: ParamAxisPatternArg):
+        ...
+        # Готовим параметры
+        param_axes = self.__prepare_params(axis_data.param_axes)
+        ...
+        # Завешаем инициализацию
+        self.__post_init()
 
+    def __prepare_params(
+            self, param_axes: tuple[ParamAxis, ...]
+            ) -> tuple[ParamAxis, ...]:
+        # Теперь мы сами передаём правильный `uid` в метод каждого класса,
+        # а не возлагаем надежды на реализацию классов-потомков.
+        uid = id(self)
+        # Вызываем метод `prepare_params` на наборе параметров вдоль MRO
+        # В стиле ФП вместо цикла используем `reduce`
+        return reduce(
+            lambda pa, t: t.prepare_params(uid, pa), #type: ignore
+            _call_chain(type(self), "prepare_params"),
+            param_axes)
+
+    @staticmethod
+    def prepare_params(
+            uid: int, param_axes: tuple[ParamAxis, ...]
+            ) -> tuple[ParamAxis, ...]:
+        """..."""
+        return param_axes
+    
+    
+    def __post_init(self):
+        # Вызываем метод `post_init` в направлении обратном MRO
+        # Здесь меняется состояние `self` и используется императивный стиль
+        for t in reversed(_call_chain(type(self), "post_init")):
+            t.post_init(self) #type: ignore
+    
+    
+    def post_init(self):
+        """..."""
+        pass
+```
+Теперь при создании нового типа тензоров не нужно думать о том,
+как и когда вызывать `super()`.
+
+И кстати, теперь `prepare_params` - статический метод, которому не нужен ни
+экземпляр класса, ни сам класс.
+
+
+### Выводы
+Иногда путь наименьшего сопротивления (классические методы экземпляров,
+которые работают с `self`), при котором код выглядит проще,
+в итоге всё усложняет.
+В первой версии при реализации классов-потомков нужно было самому
+следить за корректностью вызова `super()` и передачи параметров.
+В последней версии, базовый класс `Tensor` берёт максимум работы на себя.
+Для этого потребовалось использовать разную "экзотику"
+вроде `orm()` и `__dict__`, но она спрятана за интерфейсом, работа с которым
+стала гораздо проще.
+
+
+## Общие выводы
+Надежда на недокументированные возможности, и недокументированное поведение -
+в долгосрочной перспективе это всегда ведёт к проблемам.
+Лучше делать разные части кода максимально независимыми, ограничивая доступ
+на уровне типов, или, хотя бы спецификации.
+То есть, желательно формально, а лучше - функционально запрещать использование
+недокументированных возможностей.
+
+Интерфейс должен быть интуитивно понятным, и все его особенности должны быть
+вынесены в документацию на видное место.
+У нас же нет цели что-то скрыть, осложняя жизнь другим разработчикам
+(включая себя самого через пару-тройку месяцев).
+
+Простота интерфейса важнее простоты реализации.
+Если есть возможность автоматизировать реализацию наших ожиданий и снять
+часть когнитивной нагрузки с других разработчиков -
+это обязательно нужно сделать.
