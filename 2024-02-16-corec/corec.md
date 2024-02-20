@@ -50,7 +50,7 @@ class SimpleTensor[A: BaseAxis]:
         shape_axis_pairs = \
             SimpleTensor._calc_axis_shapes(sizes, shape_pattern_pairs)
         # C -> разделение размеров и осей -> D
-        shape, axes = SimpleTensor._unpack_shape(shape_axis_pairs)
+        shape, axes = SimpleTensor._unpack_shape_axes(shape_axis_pairs)
         self.__array = array.reshape(shape)
         self.__axis_indices = {ax: i for i, ax in enumerate(axes)}
 ```
@@ -126,6 +126,66 @@ def select_items[A, B](
 ```
 Опять рекурсии не получилось.
 Зато функция стала короче и проще.
+
+
+# 2.3 Распаковка массива из тензора
+```Python
+class SimpleTensor[A: BaseAxis]:
+    ...
+    
+    @final
+    def unwrap(self, *patterns: NestIter[AxisPattern[A]]) -> NDArray[Any]:
+        # Вызов рекурсивной функции
+        unwrap_data = _eval_unwrap(
+            self.__axis_indices, self.__array.shape, patterns)
+        return self.__array \
+            .transpose(unwrap_data.transpose_indices) \
+            .reshape(unwrap_data.reshape_sizes)
+```
+Снова рекурсия появилась из любви к ФП и рекурсивного характера
+входных данных.
+Рекурсивный тип входных данных - это для удобства пользователя,
+лучше сразу избавиться от этих сложностей,
+перейдя к линейному промежуточному представлению (`plain_patterns`):
+```Python
+@final
+def unwrap(self, *patterns: NestIter[AxisPattern[A]]) -> NDArray[Any]:
+    # Распаковываем рекурсивные входные данные
+    plain_patterns = unwrap_iterables(patterns)
+    # Проверяем на дубликаты
+    axes = tuple(self._get_axes(plain_patterns))
+    if len(axes) > len(set(axes)):
+        raise DuplicateAxisError(axes)
+    # Вычисляем индексы
+    indices = tuple(self._get_indices(plain_patterns))
+    # Вычисляем размеры
+    shape = tuple(self._get_shapes(plain_patterns))
+    return self.__array.transpose(indices).reshape(shape)
+```
+В новой версии вместо одной сложной рекурсивной функции вызывается
+несколько простых, например:
+```Python
+def _get_indices(self, patterns: Iterable[AxisPattern[A]]) -> Iterable[int]:
+    
+    def check_and_get_index(ax: A) -> int:
+        if ax not in self.__axis_indices:
+            raise AxisNotFoundError(ax)
+        return self.__axis_indices[ax]
+
+    for p in patterns:
+        if isinstance(p, BaseAxis):
+            yield check_and_get_index(p)
+            continue
+        if isinstance(p, AxisAdd):
+            continue
+        assert isinstance(p, AxisMerge)
+        yield from self._get_indices(p.axes)
+```
+Почему я считаю эту функцию ко-рекурсивной?
+Потому что она следует за форматом выходных данных (`Iterable`):
+мы выполняем **итерации** в цикле `for`,
+а если встречается сложная структура (`AxisMerge`),
+то сразу распаковываем её с помощью `yield from`.
 
 
 ### Рефлексия по работе с кодом
