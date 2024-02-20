@@ -55,10 +55,77 @@ class SimpleTensor[A: BaseAxis]:
         self.__axis_indices = {ax: i for i, ax in enumerate(axes)}
 ```
 В новой версии используется сразу несколько промежуточных
-представлений данных.
-При этом явная рекурсия здесь не нужна:
-достаточно простых линейных операций над списками.
+представлений данных (B, C, D).
+Переходы между ними настолько простые,
+что явная рекурсия вообще не понадобилась:
+оказалось достаточно функций высокого порядка
+и инструментов из стандартной библиотеки.
+Раньше все эти шаги делались сразу для каждого элемента входного списка,
+и рекурсивная функция выглядела страшновато.
 
+В новой версии использовалась только одна действительно нетривиальная функция,
+которую разберём в следующем разделе.
+
+
+## 2.2 Объединение двух последовательностей на основе условия
+Нужно сформировать последовательность,
+из элементов `if_true` и `if_false` в соответствии со значениями в `pred`.
+
+Первое, что пришло в голову:
+```Python
+def select_items[A, B](
+        pred: Iterable[bool],
+        if_true: Iterable[A],
+        if_false: Iterable[B]) -> Iterable[A | B]:
+    dest = list[A | B]()
+    it_true = iter(if_true)
+    it_false = iter(if_false)
+    try:
+        for p in pred:
+            source = it_true if p else it_false
+            dest.append(next(source))
+    except StopIteration:
+        return dest
+    return dest
+```
+Попытка решить вопрос с помощью рекурсии и pattern matching
+(без мутабельного списка и исключений) была неудачной:
+```Python
+def select_items[A, B](
+        pred: Iterable[bool],
+        if_true: Iterable[A],
+        if_false: Iterable[B]) -> Iterable[A | B]:
+    match pred, if_true, if_false:
+        # Результат начинается с головы if_true если pred начинается с True
+        case [True, *p_tail], [head, *tail], other:
+            return head, *select_items(p_tail, tail, other)
+        # Результат начинается с головы if_false если pred начинается с False
+        case [False, *p_tail], other, [head, *tail]:
+            return head, *select_items(p_tail, other, tail)
+        # Результат пустой, если не хватает голов (т.е., в остальных случаях)
+        case _:
+            return ()
+```
+Python - это не Haskell или F#,
+и он не может разбить бесконечную последовательность на голову и хвост.
+Код выше работает только для конечных контейнеров, а мне нужно для любых.
+
+Наверное, самый "питоновский" способ - через генераторы:
+```Python
+def select_items[A, B](
+        pred: Iterable[bool],
+        if_true: Iterable[A],
+        if_false: Iterable[B]) -> Iterable[A | B]:
+    it_true = iter(if_true)
+    it_false = iter(if_false)
+    for p in pred:
+        try:
+            yield next(it_true if p else it_false)
+        except StopIteration:
+            return
+```
+Опять рекурсии не получилось.
+Зато функция стала короче и проще.
 
 
 ### Рефлексия по работе с кодом
