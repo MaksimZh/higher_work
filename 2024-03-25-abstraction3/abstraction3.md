@@ -48,7 +48,7 @@
 ## 2. Сокращение иерархии классов
 
 ### 2.1 Матрицы не нужны
-```Mermaid
+```mermaid
 classDiagram
     Tensor <|-- AxisKindTensor
     Tensor <|-- BasisTensor
@@ -82,7 +82,7 @@ classDiagram
 Три зелёных класса в диаграмме - реликты старых версий,
 где не было `AxisKindTensor` и `BasisTensor` -
 простых и мощных абстракций, которые покрывают большую часть потребностей:
-```Mermaid
+```mermaid
 classDiagram
     Tensor <|-- AxisKindTensor
     Tensor <|-- BasisTensor
@@ -97,7 +97,7 @@ classDiagram
 
 
 ### 2.2 Ось добра
-```Mermaid
+```mermaid
 classDiagram
     BaseAxis <|-- SimpleAxis
     BaseAxis <|-- ParamAxis
@@ -116,7 +116,7 @@ classDiagram
     чтении кода, сериализации и отладке.
 
 Тогда так и надо делать:
-```Mermaid
+```mermaid
 classDiagram
     Hashable <|-- Axis
     Combo <|-- Axis
