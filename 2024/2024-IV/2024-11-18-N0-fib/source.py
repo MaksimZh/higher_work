@@ -14,5 +14,13 @@ def get_fibs(num):
         a, b = b, gsum.send(a)
         yield a
 
-for f in get_fibs(10):
+
+def get_fibs2(num):
+    a, b = 0, 1
+    for i in range(num):
+        yield b
+        a, b = b, a + b
+
+
+for f in get_fibs2(10):
     print(f)
